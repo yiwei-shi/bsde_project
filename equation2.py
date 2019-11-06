@@ -110,7 +110,7 @@ class EuropeanCall(Equation):
     def sample(self, num_sample,seed):
         if seed:
             np.random.seed(0)
-
+        self._x_init=80+40*np.random.uniform(0,1,[num_sample,self._dim])
         dw_sample = np.random.randn(num_sample,
                                      self._dim,
                                      self._num_time_interval) * self._sqrt_delta_t

@@ -29,7 +29,7 @@ class FeedForwardModel(object):
         # to save iteration results
         training_history = []
         # for validation
-        dw_valid, x_valid = self._bsde.sample(self._config.valid_size)
+        dw_valid, x_valid = self._bsde.sample(self._config.valid_size,False)
         # can still use batch norm of samples in the validation phase
         feed_dict_valid = {self._dw: dw_valid, self._x: x_valid, self._is_training: False}
         # initialization
@@ -44,7 +44,7 @@ class FeedForwardModel(object):
                 if self._config.verbose:
                     logging.info("step: %5u,    loss: %.4e,  elapsed time %3u" % (
                         step, loss, elapsed_time))
-            dw_train, x_train = self._bsde.sample(self._config.batch_size)
+            dw_train, x_train = self._bsde.sample(self._config.batch_size,False)
             self._sess.run(self._train_ops, feed_dict={self._dw: dw_train,
                                                        self._x: x_train,
                                                        self._is_training: True})
@@ -56,13 +56,14 @@ class FeedForwardModel(object):
         self._dw = tf.placeholder(TF_DTYPE, [None, self._dim, self._num_time_interval], name='dW')
         self._x = tf.placeholder(TF_DTYPE, [None, self._dim, self._num_time_interval + 1], name='X')
         self._is_training = tf.placeholder(tf.bool)
-        
-        y = self._fnetwork(self._x[:, :, 5], 'f_layer')
-        z = self._subnetwork(self._x[:, :, 5], str(5))        
-        x = np.linspace(80, 120, 82)
-        self.x = tf.constant(x, dtype=TF_DTYPE, shape=[1, 82, 1])
 
         with tf.variable_scope('forward'):
+
+            y = self._fnetwork(self._x[:, :, 0], 'f_layer')
+            z = self._subnetwork(self._x[:, :, 0], str(0))        
+            x = np.linspace(80, 120, 82)
+            self.x = tf.constant(x, dtype=TF_DTYPE, shape=[1, 82, 1])
+
             self.graphs = []
             l = []
             for i in range(82):
@@ -71,14 +72,14 @@ class FeedForwardModel(object):
 
             l = []
             for i in range(82):
-                l.append(self._subnetwork(self.x[:, i], str(5)))
+                l.append(self._subnetwork(self.x[:, i], str(0)))
             self.graphs.append(l)
 
-            for t in range(5, self._num_time_interval-1):
+            for t in range(0, self._num_time_interval-1):
                 print("t:", t)
                 y = y - self._bsde.delta_t * (
                     self._bsde.f_tf(time_stamp[t], self._x[:, :, t], y, z)
-                ) + tf.reduce_sum(z *0.2* self._dw[:, :, t], 1, keep_dims=True)
+                ) + tf.reduce_sum(z *0.2*self._x[:, :, t] * self._dw[:, :, t], 1, keep_dims=True)
                 z = self._subnetwork(self._x[:, :, t + 1], str(t + 1)) / self._dim
                 l = []
                 for i in range(82):
@@ -88,7 +89,7 @@ class FeedForwardModel(object):
             # terminal time
             y = y - self._bsde.delta_t * self._bsde.f_tf(
                 time_stamp[-1], self._x[:, :, -2], y, z
-            ) + tf.reduce_sum(z * 0.2 * self._dw[:, :, -1], 1, keep_dims=True)
+            ) + tf.reduce_sum(z * 0.2 *self._x[:, :, t]* self._dw[:, :, -1], 1, keep_dims=True)
             delta = y - self._bsde.g_tf(self._total_time, self._x[:, :, -1])
             # use linear approximation outside the clipped range
             #self._loss = tf.reduce_mean(tf.where(tf.abs(delta) < DELTA_CLIP, tf.square(delta),
@@ -131,8 +132,8 @@ class FeedForwardModel(object):
         with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
             # standardize the path input first
             # the affine  could be redundant, but helps converge faster
-            #hiddens = self._batch_norm(x, name='path_input_norm')
-            hiddens = x
+            hiddens = self._batch_norm(x, name='path_input_norm')
+            #hiddens = x
             for i in range(1, len(self._config.num_hiddens)-1):
                 hiddens = self._dense_batch_layer(hiddens,
                                                   self._config.num_hiddens[i],

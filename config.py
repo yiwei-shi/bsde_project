@@ -3,7 +3,7 @@ import numpy as np
 
 class Config(object):
     n_layer = 4
-    batch_size = 64
+    batch_size = 256
     valid_size = 256
     step_boundaries = [2000, 4000]
     num_iterations = 6000
@@ -35,13 +35,18 @@ class HJBConfig(Config):
     y_init_range = [0, 1]
 
 class EuropeanCallConfig(Config):
+    #batch_size = 100000
+    #valid_size = 10000
+    num_iterations = 4000
+    #ogging_frequency = 50
+
+
     dim=1
     total_time=1
-    num_time_interval=20
+    num_time_interval=10
     lr_values = list(np.array([5e-3, 5e-3]))
     lr_boundaries = [2000]
-    num_iterations = 4000
-    num_hiddens = [dim, dim+10, dim+10, dim]
+    num_hiddens = [dim, dim+10, dim+10,dim+10, dim]
     y_init_range = [5, 15]
 
 class PricingOptionConfig(Config):
