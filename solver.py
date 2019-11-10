@@ -45,7 +45,7 @@ class FeedForwardModel(object):
                         step, loss, init, elapsed_time))
                     logging.info("z_init: %.4e" % (
                         z_init))
-            dw_train, x_train = self._bsde.sample(self._config.batch_size,True)
+            dw_train, x_train = self._bsde.sample(self._config.batch_size,False)
             self._sess.run(self._train_ops, feed_dict={self._dw: dw_train,
                                                        self._x: x_train,
                                                        self._is_training: True})
@@ -92,7 +92,7 @@ class FeedForwardModel(object):
             # terminal time
             y = y - self._bsde.delta_t * self._bsde.f_tf(
                 time_stamp[-1], self._x[:, :, -2], y, z
-            ) + tf.reduce_sum(z * 0.2 *self._x[:, :, t]* self._dw[:, :, -1], 1, keep_dims=True)
+            ) + tf.reduce_sum(z * 0.2 *self._x[:, :, -2]* self._dw[:, :, -1], 1, keep_dims=True)
             delta = y - self._bsde.g_tf(self._total_time, self._x[:, :, -1])
             # use linear approximation outside the clipped range
             #self._loss = tf.reduce_mean(tf.where(tf.abs(delta) < DELTA_CLIP, tf.square(delta),

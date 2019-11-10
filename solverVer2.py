@@ -48,6 +48,12 @@ class FeedForwardModel(object):
             self._sess.run(self._train_ops, feed_dict={self._dw: dw_train,
                                                        self._x: x_train,
                                                        self._is_training: True})
+            if step % self._config.logging_frequency == 0:
+                feed_dict_valid2 = {self._dw: dw_train, self._x: x_train, self._is_training: False}
+                loss = self._sess.run([self._loss], feed_dict=feed_dict_valid2)[0]
+                #print(loss)
+                if self._config.verbose:
+                    logging.info("step: %5u,  training  loss: %.4e" % (step, loss))
         return np.array(training_history), graphs
 
     def build(self):
@@ -59,10 +65,11 @@ class FeedForwardModel(object):
 
         with tf.variable_scope('forward'):
 
-            y = self._fnetwork(self._x[:, :, 0], 'f_layer')
+            y_init = self._fnetwork(self._x[:, :, 0], 'f_layer')
             z = self._subnetwork(self._x[:, :, 0], str(0))        
             x = np.linspace(80, 120, 82)
             self.x = tf.constant(x, dtype=TF_DTYPE, shape=[1, 82, 1])
+            y = 1*y_init
 
             self.graphs = []
             l = []
@@ -79,7 +86,7 @@ class FeedForwardModel(object):
                 print("t:", t)
                 y = y - self._bsde.delta_t * (
                     self._bsde.f_tf(time_stamp[t], self._x[:, :, t], y, z)
-                ) + tf.reduce_sum(z *0.2*self._x[:, :, t] * self._dw[:, :, t], 1, keep_dims=True)
+                ) + tf.reduce_sum(z *0.2*self._x[:, :, t] * self._dw[:, :, t], 1, keepdims=True)
                 z = self._subnetwork(self._x[:, :, t + 1], str(t + 1)) / self._dim
                 l = []
                 for i in range(82):
@@ -89,12 +96,12 @@ class FeedForwardModel(object):
             # terminal time
             y = y - self._bsde.delta_t * self._bsde.f_tf(
                 time_stamp[-1], self._x[:, :, -2], y, z
-            ) + tf.reduce_sum(z * 0.2 *self._x[:, :, t]* self._dw[:, :, -1], 1, keep_dims=True)
+            ) + tf.reduce_sum(z * 0.2 *self._x[:, :, -2]* self._dw[:, :, -1], 1, keepdims=True)
             delta = y - self._bsde.g_tf(self._total_time, self._x[:, :, -1])
             # use linear approximation outside the clipped range
-            #self._loss = tf.reduce_mean(tf.where(tf.abs(delta) < DELTA_CLIP, tf.square(delta),
-                                                 #2 * DELTA_CLIP * tf.abs(delta) - DELTA_CLIP ** 2))
-            self._loss = tf.reduce_mean(tf.square(delta))
+            self._loss = tf.reduce_mean(tf.where(tf.abs(delta) < DELTA_CLIP, tf.square(delta),
+                                                 2 * DELTA_CLIP * tf.abs(delta) - DELTA_CLIP ** 2))
+            #self._loss = tf.reduce_mean(tf.square(delta))#+10000*tf.reduce_mean(tf.maximum(y_init-100,0))
         # train operations
         global_step = tf.get_variable('global_step', [],
                                       initializer=tf.constant_initializer(0),
@@ -104,6 +111,8 @@ class FeedForwardModel(object):
                                                     self._config.lr_values)
         trainable_variables = tf.trainable_variables()
         grads = tf.gradients(self._loss, trainable_variables)
+        for grad in grads:
+            grad = tf.clip_by_norm(grad, 3)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         apply_op = optimizer.apply_gradients(zip(grads, trainable_variables),
                                              global_step=global_step, name='train_step')
@@ -115,8 +124,8 @@ class FeedForwardModel(object):
         with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
             # standardize the path input first
             # the affine  could be redundant, but helps converge faster
-            #hiddens = self._batch_norm(x, name='path_input_norm')
-            hiddens = x
+            hiddens = self._batch_norm(x, name='path_input_norm')
+            #hiddens = x
             for i in range(1, len(self._fnetwork_structure)-1):
                 hiddens = self._dense_batch_layer(hiddens,
                                                   self._fnetwork_structure[i],
@@ -156,6 +165,7 @@ class FeedForwardModel(object):
             hiddens_bn = self._batch_norm(hiddens)
         if activation_fn:
             return activation_fn(hiddens_bn)
+            #return activation_fn(hiddens)
         else:
             return hiddens_bn
 
