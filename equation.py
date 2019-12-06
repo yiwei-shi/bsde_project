@@ -1,5 +1,5 @@
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from scipy.stats import multivariate_normal as normal
 
 
@@ -61,12 +61,12 @@ class AllenCahn(Equation):
         self._sigma = np.sqrt(2.0)
 
     def sample(self, num_sample):
-        dw_sample = normal.rvs(size=[num_sample,
-                                     self._dim,
-                                     self._num_time_interval]) * self._sqrt_delta_t
+        dw_sample = np.random.randn(num_sample,
+                                     self.dim,
+                                     self.num_time_interval) * self._sqrt_delta_t
         x_sample = np.zeros([num_sample, self._dim, self._num_time_interval + 1])
         x_sample[:, :, 0] = np.ones([num_sample, self._dim]) * self._x_init
-        for i in xrange(self._num_time_interval):
+        for i in range(self._num_time_interval):
             x_sample[:, :, i + 1] = x_sample[:, :, i] + self._sigma * dw_sample[:, :, i]
         return dw_sample, x_sample
 
@@ -74,7 +74,7 @@ class AllenCahn(Equation):
         return y - tf.pow(y, 3)
 
     def g_tf(self, t, x):
-        return 0.5 / (1 + 0.2 * tf.reduce_sum(tf.square(x), 1, keep_dims=True))
+        return 0.5 / (1 + 0.2 * tf.reduce_sum(tf.square(x), 1, keepdims=True))
 
 
 class HJB(Equation):
@@ -85,83 +85,88 @@ class HJB(Equation):
         self._lambda = 1.0
 
     def sample(self, num_sample):
-        dw_sample = normal.rvs(size=[num_sample,
-                                     self._dim,
-                                     self._num_time_interval]) * self._sqrt_delta_t
+        dw_sample = np.random.randn(num_sample,
+                                     self.dim,
+                                     self.num_time_interval) * self._sqrt_delta_t
         x_sample = np.zeros([num_sample, self._dim, self._num_time_interval + 1])
         x_sample[:, :, 0] = np.ones([num_sample, self._dim]) * self._x_init
-        for i in xrange(self._num_time_interval):
+        for i in range(self._num_time_interval):
             x_sample[:, :, i + 1] = x_sample[:, :, i] + self._sigma * dw_sample[:, :, i]
         return dw_sample, x_sample
 
     def f_tf(self, t, x, y, z):
-        return -self._lambda * tf.reduce_sum(tf.square(z), 1, keep_dims=True)
+        return -self._lambda * tf.reduce_sum(tf.square(z), 1, keepdims=True)
 
     def g_tf(self, t, x):
-        return tf.log((1 + tf.reduce_sum(tf.square(x), 1, keep_dims=True)) / 2)
+        return tf.log((1 + tf.reduce_sum(tf.square(x), 1, keepdims=True)) / 2)
 
 class EuropeanCall(Equation):
-    def __init__(self, dim, total_time, num_time_interval):
+    def __init__(self, dim, total_time, num_time_interval, sigma, r, K, ob_range):
         super(EuropeanCall, self).__init__(dim, total_time, num_time_interval)
-        self._x_init = np.ones(self._dim) * 100
-        self._sigma = 0.2
-        self._r = 0.00
+        self._sigma = sigma
+        self._r = r
+        self._K = K
+        self.lower, self.upper = ob_range
 
-    def sample(self, num_sample,seed):
-        if seed:
-            np.random.seed(0)
-
+    def sample(self, num_sample):
+#        x_init = np.random.uniform(self.lower, self.upper, [ num_sample, self.dim ])
+        x_init = np.random.uniform(self.lower, self.upper, size = [ num_sample, self.dim ])
         dw_sample = np.random.randn(num_sample,
-                                     self._dim,
-                                     self._num_time_interval) * self._sqrt_delta_t
-        x_sample = np.zeros([num_sample, self._dim, self._num_time_interval + 1])
-        x_sample[:, :, 0] = np.ones([num_sample, self._dim]) * self._x_init
+                                     self.dim,
+                                     self.num_time_interval) * self._sqrt_delta_t
+        x_sample = np.zeros([num_sample, self.dim, self.num_time_interval + 1])
+        x_sample[:, :, 0] = np.ones([num_sample, self.dim]) * x_init
         
-        factor = np.exp((self._r-(self._sigma**2)/2)*self._delta_t)
+        factor = np.exp( (self._r - (self._sigma**2)/2 ) * self._delta_t)
         for i in range(self._num_time_interval):
             x_sample[:, :, i + 1] = (factor * np.exp(self._sigma * dw_sample[:, :, i])) * x_sample[:, :, i]
         return dw_sample, x_sample
-
+    
     def f_tf(self, t, x, y, z):
         return -self._r * y
 
     def g_tf(self, t, x):
-        return tf.maximum(x - 100, 0) 
-
+        return tf.maximum(x - self._K, 0)
 
 class PricingOption(Equation):
     def __init__(self, dim, total_time, num_time_interval):
         super(PricingOption, self).__init__(dim, total_time, num_time_interval)
         self._x_init = np.ones(self._dim) * 100
         self._sigma = 0.2
-        self._mu_bar = 0.06
+        self._mu_bar = 0.07
         self._rl = 0.04
         self._rb = 0.06
         self._alpha = 1.0 / self._dim
 
     def sample(self, num_sample):
-        dw_sample = normal.rvs(size=[num_sample,
-                                     self._dim,
-                                     self._num_time_interval]) * self._sqrt_delta_t
+        dw_sample = np.random.randn(num_sample,
+                                     self.dim,
+                                     self.num_time_interval) * self._sqrt_delta_t
         x_sample = np.zeros([num_sample, self._dim, self._num_time_interval + 1])
         x_sample[:, :, 0] = np.ones([num_sample, self._dim]) * self._x_init
         # for i in xrange(self._n_time):
-        # 	x_sample[:, :, i + 1] = (1 + self._mu_bar * self._delta_t) * x_sample[:, :, i] + (
-        # 		self._sigma * x_sample[:, :, i] * dw_sample[:, :, i])
+        #   x_sample[:, :, i + 1] = (1 + self._mu_bar * self._delta_t) * x_sample[:, :, i] + (
+        #     self._sigma * x_sample[:, :, i] * dw_sample[:, :, i])
         factor = np.exp((self._mu_bar-(self._sigma**2)/2)*self._delta_t)
-        for i in xrange(self._num_time_interval):
+        for i in range(self._num_time_interval):
             x_sample[:, :, i + 1] = (factor * np.exp(self._sigma * dw_sample[:, :, i])) * x_sample[:, :, i]
         return dw_sample, x_sample
 
     def f_tf(self, t, x, y, z):
-        temp = tf.reduce_sum(z, 1, keep_dims=True) / self._sigma
+        temp = tf.reduce_sum(z, 1, keepdims=True) / self._sigma
         return -self._rl * y - (self._mu_bar - self._rl) * temp + (
             (self._rb - self._rl) * tf.maximum(temp - y, 0))
 
     def g_tf(self, t, x):
-        temp = tf.reduce_max(x, 1, keep_dims=True)
+        temp = tf.reduce_max(x, 1, keepdims=True)
         return tf.maximum(temp - 120, 0) - 2 * tf.maximum(temp - 150, 0)
 
+    def a_star(self, t, x, y, z):
+        return -self._rb
+    
+    def f_star(self, t, x, y, z):
+        temp = tf.reduce_sum(z, 1, keepdims=True) / self._sigma
+        return temp * (self._mu_bar - self._rb)
 
 class PricingDefaultRisk(Equation):
     def __init__(self, dim, total_time, num_time_interval):
